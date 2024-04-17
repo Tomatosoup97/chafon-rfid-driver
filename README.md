@@ -10,7 +10,7 @@ may require adjustments in the code.
 1. Ensure that Chafon RFID reader is connected and exposed at `/dev/ttyUSB0`
 1. Load the kernel driver module
 
-    $ sudo insmod rfid_reader_m.ko
+    `$ sudo insmod rfid_reader_m.ko`
 
 1. Invoke `SET_FILE` ioctl (see section below about IOCTL calls)
 1. Adjust parameters if needed
@@ -18,7 +18,7 @@ may require adjustments in the code.
 1. The returned buffer shall be of type `inventory_data_t` (see [this file](./rfid/reader.h))
 
 A working example on how to use and interact with the driver is presented in
-[userspace_example](./userspace_example).
+[userspace_example](./userspace_example/read.c).
 
 ## Supported IOCTL calls to the driver:
 

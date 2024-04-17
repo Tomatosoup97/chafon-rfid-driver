@@ -3,6 +3,6 @@
 # Makefile for the RFID reader driver
 #
 
-obj-$(CONFIG_rfid_reader)	+= rfid_reader_m.o
+obj-$(CONFIG_CHAFON_RFID_READER)	+= rfid_reader_m.o
 
-rfid_reader_m-y := rfid_reader.o reader.o
+rfid_reader_m-y := chafon_driver.o reader.o
