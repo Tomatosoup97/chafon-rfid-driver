@@ -93,6 +93,11 @@ struct rfid_reader {
 	struct device *dev;
 };
 
+
+// XXX: My dear reviewer, I belive that you may have other things to do than
+// to carefully analyze this system of macro logging. I probably will remove
+// all of it eventually, or at least change its form to something more feasible
+//
 #if LOG_ENABLED
 	#define LOG_ENTRY_LINE(dev) \
 		dev_info(dev, "[%s:%d] %s: ", __FILE__, __LINE__, __func__)
