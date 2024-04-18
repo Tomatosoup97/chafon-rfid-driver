@@ -1,17 +1,18 @@
 // SPDX-License-Identifier: GPL-2.0
-#include <linux/module.h>
-#include <linux/kernel.h>
-#include <linux/fs.h>
-#include <linux/errno.h>
 #include <linux/cdev.h>
+#include <linux/errno.h>
+#include <linux/fs.h>
+#include <linux/kernel.h>
+#include <linux/module.h>
 
 #include "reader.h"
 
 u8 searched_epc[EPC_MAX_LEN];
 size_t searched_epc_len;
 
-uint16_t crc_checksum(u8 *data, int len)
+static uint16_t crc_checksum(u8 *data, int len)
 {
+	// TODO: check if this is implemented somewhere in the kernel
 	// crc16_mcrf4xx algorithm
 	u16 crc = INITIAL_CRC;
 
@@ -30,16 +31,29 @@ uint16_t crc_checksum(u8 *data, int len)
 	return crc;
 }
 
+static int verify_checksum(u8 *data, ssize_t data_len, uint8_t *checksum_bytes)
+{
+	u16 crc = crc_checksum(data, data_len);
+
+	return ((checksum_bytes[0] == CRC_LSB(crc)) &&
+		(checksum_bytes[1] == CRC_MSB(crc)));
+}
+
 int write_frame(struct rfid_reader *reader,
 		struct file *serial_file,
 		struct reader_command *cmd)
 {
-	u8 HEADER_SIZE = 4;
-	u16 crc;
 	ssize_t num_bytes_written;
-	size_t len = cmd->size + HEADER_SIZE;
+	u8 HEADER_SIZE = 4;
 	size_t off = 0;
-	u8 *buff = kmalloc(sizeof(uint8_t) * (len + 1), GFP_KERNEL);
+	size_t len;
+	u8 *buff;
+	u16 crc;
+
+	buff = kmalloc((len + 1), GFP_KERNEL);
+	if (!buff)
+		return -ENOMEM;
+	len = cmd->size + HEADER_SIZE;
 
 	SHOW_READER_COMMAND(reader->dev, cmd);
 
@@ -48,14 +62,11 @@ int write_frame(struct rfid_reader *reader,
 	buff[off++] = cmd->cmd;
 
 	memcpy(&buff[off], cmd->data, cmd->size);
-
 	off += cmd->size;
 
 	crc = crc_checksum(buff, len - 1);
-
 	buff[off++] = CRC_LSB(crc);
 	buff[off++] = CRC_MSB(crc);
-
 	num_bytes_written = kernel_write(serial_file, buff, len + 1, &serial_file->f_pos);
 
 	if (num_bytes_written < 0)
@@ -67,25 +78,25 @@ int write_frame(struct rfid_reader *reader,
 
 ssize_t read_frame(struct file *serial_file, uint8_t *buffer)
 {
-	int length = 0;
 	ssize_t num_bytes_read = 0;
-	int i = 0;
 	int MAX_ITER = 1000 * 1000;
+	int length = 0;
+	int i = 0;
 
 	while (num_bytes_read <= 0 && i < MAX_ITER) {
 		num_bytes_read = kernel_read(serial_file,
 					     &length,
-					     sizeof(uint8_t),
+					     1,
 					     &serial_file->f_pos);
 		i += 1;
 	}
 
-	if (num_bytes_read < 0)
+	if (num_bytes_read <= 0)
 		return num_bytes_read;
 
 	num_bytes_read = kernel_read(serial_file, buffer + 1, length, &serial_file->f_pos);
 
-	if (num_bytes_read == -1)
+	if (num_bytes_read < 0)
 		return num_bytes_read;
 
 	buffer[0] = (uint8_t)num_bytes_read;
@@ -93,21 +104,13 @@ ssize_t read_frame(struct file *serial_file, uint8_t *buffer)
 	return num_bytes_read + 1;
 }
 
-int verify_checksum(u8 *data, ssize_t data_len, uint8_t *checksum_bytes)
-{
-	u16 crc = crc_checksum(data, data_len);
-
-	return ((checksum_bytes[0] == CRC_LSB(crc)) &&
-		(checksum_bytes[1] == CRC_MSB(crc)));
-}
-
-int parse_frame(struct rfid_reader *reader,
-		u8 *buffer,
+static int parse_frame(struct rfid_reader *reader,
+		       u8 *buffer,
 		ssize_t buffer_size,
 		struct reader_response *frame)
 {
-	u8 HEADER_SIZE = 4;
 	u8 CHECKSUM_SIZE = 2;
+	u8 HEADER_SIZE = 4;
 	int off = 1;
 
 	if (buffer_size < HEADER_SIZE + CHECKSUM_SIZE) {
@@ -120,7 +123,9 @@ int parse_frame(struct rfid_reader *reader,
 	frame->reader_addr = buffer[off++];
 	frame->resp_cmd = buffer[off++];
 	frame->status = buffer[off++];
-	frame->data = kmalloc_array(frame->size, sizeof(uint8_t), GFP_KERNEL);
+	frame->data = kmalloc_array(frame->size, 1, GFP_KERNEL);
+	if (!frame->data)
+		return -ENOMEM;
 
 	for (u8 i = 0; i < frame->size; i++)
 		frame->data[i] = buffer[off++];
@@ -135,7 +140,7 @@ int parse_frame(struct rfid_reader *reader,
 	return 0;
 }
 
-void free_frame(struct reader_response *frame)
+static void free_frame(struct reader_response *frame)
 {
 	kfree(frame->data);
 }
@@ -145,15 +150,15 @@ int run_command(struct rfid_reader *reader,
 		struct reader_command *cmd,
 		struct reader_response *reader_resp)
 {
-	ssize_t num_bytes_read;
 	u8 buffer[CMD_RESPONSE_BUFFER_SIZE] = {0};
+	ssize_t num_bytes_read;
 
 	if (write_frame(reader, serial_file, cmd) < 0)
 		return -1;
 
 	num_bytes_read = read_frame(serial_file, buffer);
 
-	if (num_bytes_read < 0)
+	if (num_bytes_read <= 0)
 		return -1;
 
 	if (parse_frame(reader, buffer, num_bytes_read, reader_resp) < 0) {
@@ -164,16 +169,18 @@ int run_command(struct rfid_reader *reader,
 	return 0;
 }
 
-int translate_antenna_num(int antenna_code)
+static int translate_antenna_num(int antenna_code)
 {
-		if (antenna_code == 1)
-			return 1;
-		if (antenna_code == 2)
-			return 2;
-		if (antenna_code == 4)
-			return 3;
-		if (antenna_code == 8)
-			return 4;
+	switch (antenna_code) {
+	case 1:
+		return 1;
+	case 2:
+		return 2;
+	case 4:
+		return 3;
+	case 8:
+		return 4;
+	default:
 		return -1;
 }
 
@@ -181,8 +188,8 @@ int parse_inventory_data(struct rfid_reader *reader,
 			 struct reader_response *resp,
 			 struct inventory_data *inventory)
 {
-	int off = 0;
 	int antenna_num = translate_antenna_num(resp->data[off++]);
+	int off = 0;
 
 	if (antenna_num == -1) {
 		dev_err(reader->dev, "Invalid antenna number\n");
@@ -217,9 +224,14 @@ int parse_inventory_data(struct rfid_reader *reader,
 	inventory->tags = kmalloc_array(inventory->num_tags,
 					sizeof(struct inventory_tag *),
 					GFP_KERNEL);
+	if (!inventory->tags)
+		return -ENOMEM;
 
 	for (int i = 0; i < inventory->num_tags; i++) {
 		struct inventory_tag *tag = kmalloc(sizeof(*tag), GFP_KERNEL);
+
+		if (!tag)
+			return -ENOMEM;
 
 		inventory->tags[i] = tag;
 
@@ -286,7 +298,6 @@ int set_buzzer(struct rfid_reader *reader, struct file *serial_file, uint8_t val
 {
 	// Pass value = 1 to enable buzzer, 0 to disable
 
-	int ret;
 	struct reader_response reader_resp;
 	struct reader_command cmd = {
 		.addr = 0xFF,
@@ -294,6 +305,7 @@ int set_buzzer(struct rfid_reader *reader, struct file *serial_file, uint8_t val
 		.size = 1,
 		.data = (uint8_t[]) { value },
 	};
+	int ret;
 
 	ret = run_command(reader, serial_file, &cmd, &reader_resp);
 	if (!ret)
@@ -305,7 +317,6 @@ int set_power(struct rfid_reader *reader, struct file *serial_file, uint8_t valu
 {
 	// Integer value in range [0 - 30]
 
-	int ret;
 	struct reader_response reader_resp;
 	struct reader_command cmd = {
 		.addr = 0xFF,
@@ -313,6 +324,7 @@ int set_power(struct rfid_reader *reader, struct file *serial_file, uint8_t valu
 		.size = 1,
 		.data = (uint8_t[]) { value },
 	};
+	int ret;
 
 	if (value > MAX_POWER) {
 		dev_err(reader->dev, "Power must be in range 0-%d, was: %d\n", MAX_POWER, value);
@@ -328,7 +340,6 @@ int set_scan_time(struct rfid_reader *reader, struct file *serial_file, uint8_t 
 {
 	// Integer value in range [3 - 255]
 
-	int ret;
 	struct reader_response reader_resp;
 	struct reader_command cmd = {
 		.addr = 0xFF,
@@ -336,6 +347,7 @@ int set_scan_time(struct rfid_reader *reader, struct file *serial_file, uint8_t 
 		.size = 1,
 		.data = (uint8_t[]) { value },
 	};
+	int ret;
 
 	if (value < MIN_SCAN_TIME) {
 		dev_err(reader->dev,

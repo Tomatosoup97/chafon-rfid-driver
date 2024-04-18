@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#include <linux/module.h>
-#include <linux/kernel.h>
-#include <linux/fs.h>
-#include <linux/errno.h>
 #include <linux/cdev.h>
+#include <linux/errno.h>
 #include <linux/file.h>
+#include <linux/fs.h>
+#include <linux/kernel.h>
 #include <linux/miscdevice.h>
+#include <linux/module.h>
 
 #define LOG_ENABLED 1
 
@@ -222,22 +222,11 @@ struct rfid_reader {
 #define CRC_MSB(crc) ((crc) >> 8)
 #define CRC_LSB(crc) ((crc) & 0xFF)
 
-uint16_t crc_checksum(u8 *data, int len);
-
 int write_frame(struct rfid_reader *reader,
 		struct file *serial_file,
 		struct reader_command *cmd);
 
 ssize_t read_frame(struct file *serial_file, uint8_t *buffer);
-
-int verify_checksum(u8 *data, ssize_t data_len, uint8_t *checksum_bytes);
-
-int parse_frame(struct rfid_reader *reader,
-		u8 *buffer,
-		ssize_t buffer_size,
-		struct reader_response *frame);
-
-void free_frame(struct reader_response *frame);
 
 int run_command(struct rfid_reader *reader,
 		struct file *serial_file,
@@ -249,8 +238,6 @@ int set_buzzer(struct rfid_reader *reader, struct file *serial_file, uint8_t val
 int set_power(struct rfid_reader *reader, struct file *serial_file, uint8_t value);
 
 int set_scan_time(struct rfid_reader *reader, struct file *serial_file, uint8_t value);
-
-int translate_antenna_num(int antenna_code);
 
 int parse_inventory_data(struct rfid_reader *reader,
 			 struct reader_response *resp,

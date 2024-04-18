@@ -4,11 +4,8 @@
  * Copyright (c) 2024
  * Mateusz Urbańczyk <mateusz.urbanczyk97@gmail.com>
  */
-
-#include <linux/fs.h>
 #include <linux/file.h>
-#include <linux/uaccess.h>
-#include <linux/slab.h>
+#include <linux/fs.h>
 #include <linux/kernel.h>
 #include <linux/miscdevice.h>
 #include <linux/module.h>
@@ -16,6 +13,8 @@
 #include <linux/of.h>
 #include <linux/of_address.h>
 #include <linux/platform_device.h>
+#include <linux/slab.h>
+#include <linux/uaccess.h>
 
 #include "reader.h"
 
@@ -28,7 +27,7 @@ enum ioctl_cmd {
 	IOCTL_SET_BUZZER = _IO('d', 0x04)
 };
 
-int set_driver_file(struct rfid_reader *priv, int fd)
+static int set_driver_file(struct rfid_reader *priv, int fd)
 {
 	if (priv->dev_fd.file)
 		fdput(priv->dev_fd);
@@ -45,13 +44,12 @@ static long rfid_reader_ioctl(struct file *file,
 			      unsigned int cmd,
 			      unsigned long user_arg)
 {
-	int kernel_arg, ret;
 	struct rfid_reader *priv;
+	int kernel_arg;
+	int ret;
 
 	priv = container_of(file->private_data, struct rfid_reader, misc);
-
 	dev_notice(priv->dev, "[%s]: IOCTL cmd=%u, arg=%lu\n", __func__, cmd, user_arg);
-
 	ret = copy_from_user(&kernel_arg, (int __user *)user_arg, sizeof(int));
 
 	if (ret) {
@@ -62,29 +60,21 @@ static long rfid_reader_ioctl(struct file *file,
 	switch (cmd) {
 	case IOCTL_SET_FILE:
 		ret = set_driver_file(priv, kernel_arg);
-		if (ret != 0)
-			return ret;
 		break;
 	case IOCTL_SET_SCAN_TIME:
 		ret = set_scan_time(priv, priv->dev_fd.file, (uint8_t)kernel_arg);
-		if (ret != 0)
-			return ret;
 		break;
 	case IOCTL_SET_POWER:
 		ret = set_power(priv, priv->dev_fd.file, (uint8_t)kernel_arg);
-		if (ret != 0)
-			return ret;
 		break;
 	case IOCTL_SET_BUZZER:
 		ret = set_buzzer(priv, priv->dev_fd.file, (uint8_t)kernel_arg);
-		if (ret != 0)
-			return ret;
 		break;
 	default:
-		return -EINVAL;
+		ret = -EINVAL;
 	}
 
-	return 0;
+	return ret;
 }
 
 static ssize_t rfid_reader_read(struct file *file,
@@ -92,9 +82,9 @@ static ssize_t rfid_reader_read(struct file *file,
 				size_t size,
 				loff_t *offset)
 {
+	char kernel_buffer[READ_BUFFER_SIZE];
 	struct rfid_reader *priv;
 	ssize_t num_bytes_read;
-	char kernel_buffer[READ_BUFFER_SIZE];
 
 	priv = container_of(file->private_data, struct rfid_reader, misc);
 
@@ -105,9 +95,7 @@ static ssize_t rfid_reader_read(struct file *file,
 		dev_notice(priv->dev, "[%s]: reading too much: %d\n", __func__, size);
 		return -ENOMEM;
 	}
-
 	read_tags(priv, priv->dev_fd.file);
-
 	num_bytes_read = 0;
 
 	if (num_bytes_read < 0)
@@ -164,6 +152,7 @@ static int rfid_reader_probe(struct platform_device *pdev)
 
 	ret = misc_register(&priv->misc);
 	if (ret) {
+		// TODO: use dev_probe_err instead
 		dev_err(dev, "Unable to register misc device\n");
 		return ret;
 	}
