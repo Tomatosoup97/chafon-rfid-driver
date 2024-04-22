@@ -116,6 +116,7 @@ static int rfid_reader_release(struct inode *inode, struct file *file)
 	if (priv->dev_fd.file)
 		fdput(priv->dev_fd);
 
+	priv->dev_fd.file = NULL;
 	file->private_data = NULL;
 	return 0;
 }
