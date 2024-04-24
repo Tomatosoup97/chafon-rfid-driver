@@ -188,8 +188,10 @@ int parse_inventory_data(struct rfid_reader *reader,
 			 struct reader_response *resp,
 			 struct inventory_data *inventory)
 {
-	int antenna_num = translate_antenna_num(resp->data[off++]);
+	int antenna_num;
 	int off = 0;
+
+	antenna_num = translate_antenna_num(resp->data[off++]);
 
 	if (antenna_num == -1) {
 		dev_err(reader->dev, "Invalid antenna number\n");

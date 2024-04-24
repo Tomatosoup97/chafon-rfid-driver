@@ -50,7 +50,7 @@ static long rfid_reader_ioctl(struct file *file,
 
 	priv = container_of(file->private_data, struct rfid_reader, misc);
 	dev_notice(priv->dev, "[%s]: IOCTL cmd=%u, arg=%lu\n", __func__, cmd, user_arg);
-	ret = copy_from_user(&kernel_arg, (int __user *)user_arg, sizeof(int));
+	ret = get_user(kernel_arg, (int __user *)user_arg);
 
 	if (ret) {
 		dev_err(priv->dev, "[%s] ioctl failed copying from user: %d\n", __func__, ret);
