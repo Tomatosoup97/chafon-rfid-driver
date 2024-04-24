@@ -12,8 +12,6 @@ size_t searched_epc_len;
 
 static uint16_t crc_checksum(u8 *data, int len)
 {
-	// TODO: check if this is implemented somewhere in the kernel
-	// crc16_mcrf4xx algorithm
 	u16 crc = INITIAL_CRC;
 
 	if (!data || len < 0)
